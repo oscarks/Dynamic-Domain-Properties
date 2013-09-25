@@ -4,4 +4,5 @@ stacktrace.log
 docs
 unzipped
 grails-dynamic-domain-properties-*.zip
+grails-dynamic-domain-properties-*.zip.sha1
 plugin.xml
