@@ -9,7 +9,7 @@ import static org.apache.commons.lang.ObjectUtils.identityToString
 class DynamicProperty {
 
   static final transients = ['parent', 'parentLocal', 'propertyValue', 'propertyValueLocal', 'children']
-  
+    
   String parentClassValue, propertyClassValue
   String parentId, propertyName, propertyValueString
   int idx = -1
@@ -30,20 +30,20 @@ class DynamicProperty {
   }
 
   def beforeInsert() {
-    if(propertyValueString == null || propertyClassValue == null) {
-      propertyClassValue = propertyValueLocal?.getClass()?.name
-      propertyValueString = makeValueString(propertyValueLocal)
-    }
-    if(parentClassValue == null || parentId == null) {
-      parentClassValue = parentLocal?.getClass()?.name
-      parentId = stringify(parentLocal?.id) 
-    }
+	    if(propertyValueString == null || propertyClassValue == null) {
+	      propertyClassValue = propertyValueLocal?.getClass()?.name
+	      propertyValueString = makeValueString(propertyValueLocal)
+	    }
+	    if(parentClassValue == null || parentId == null) {
+	      parentClassValue = parentLocal?.getClass()?.name
+	      parentId = stringify(parentLocal?.id) 
+	    }
   }
 
   def beforeUpdate() { beforeInsert() }
 
   def afterInsert() {
-    persistChildren()
+		persistChildren()
   }
 
   def afterUpdate() { afterInsert() }
@@ -87,18 +87,20 @@ class DynamicProperty {
     switch(clazz) {
       case null: return null
       case Collection:
-        def dbValues = query("parentId = :parId and parentClassValue = :parClazz",
+//        def dbValues = query("parentId = :parId and parentClassValue = :parClazz",
+        def dbValues = findAll("from DynamicProperty as d where d.parentId = :parId and d.parentClassValue = :parClazz",
           [parId:stringify(dynProp.id), parClazz:dynProp.getClass().name]
-        ) as List
+        ) 
         def toReturn = constructWithFallback(clazz, [])
-        (0..Long.parseLong(val)-1).each { idx ->
+        (0..Integer.parseInt(val)-1).each { idx ->
           toReturn[idx] = dbValues.find { it.idx == idx }?.propertyValue
         }
         return toReturn
       case Map:
-        def dbValues = query("parentId = :parId and parentClassValue = :parClazz",
+//        def dbValues = query("parentId = :parId and parentClassValue = :parClazz",
+		def dbValues = findAll("from DynamicProperty as d where d.parentId = :parId and d.parentClassValue = :parClazz",
           [parId:stringify(dynProp.id), parClazz:dynProp.getClass().name]
-        ) as List
+        ) 
         def toReturn = constructWithFallback(clazz, [:])
         (0..Long.parseLong(val)-1).each { idx ->
           def k = dbValues.find { it.idx == idx && it.isKey == true }?.propertyValue
@@ -141,12 +143,39 @@ class DynamicProperty {
   void persistChildren() {
     withNewSession { session ->
       withTransaction {
-        persistChildrenImpl()
+		  removeOldChildren()
+		  persistChildrenImpl()
       }
       session.flush()
     }
   }
 
+  // Add to remove old property
+
+  void removeOldChildren() {
+    def me = this
+	if (me && me.idx==-1) {
+	    def toDelete=toRemoveChildren(me,false)
+	    toDelete.each {
+	       it.delete(flush:true)
+	    }
+	}
+  }
+  
+  def toRemoveChildren(prnt,withMe=true) {
+    def toDelete=[]
+    def children = createCriteria().list {
+      and {
+        eq('parentClassValue', prnt.getClass().name)
+        eq('parentId', stringify(prnt.id))
+      }
+    }
+    children.each {
+      toDelete +=toRemoveChildren(it)
+    }
+    if (withMe) toDelete << prnt
+    toDelete
+  }
   void persistChildrenImpl() {
     def me = this
     if(!me.id) throw new IllegalStateException("Can only persist children if parent is persisted")
@@ -158,7 +187,11 @@ class DynamicProperty {
       value.eachWithIndex { val, idx ->
         def newb = children.find { 
           it.idx == idx
-        } ?: new DynamicProperty(idx:idx, parent:me)
+        }
+		if (!newb) {
+		 	newb =  new DynamicProperty(idx:idx)
+			newb.parent = me
+		}
         newb.propertyValue = val
         newb.propertyName = me.propertyName
         toPersist << newb
@@ -171,7 +204,11 @@ class DynamicProperty {
           def newb = children.find { 
             it.isKey == isKey &&
             it.idx == idx
-          } ?: new DynamicProperty(isKey:isKey, idx:idx, parent:me)
+          } 
+		  if (!newb) {
+		  	newb = new DynamicProperty(isKey:isKey, idx:idx)
+		    newb.parent=me
+		  }
           newb.propertyValue = val
           newb.propertyName = me.propertyName
           toPersist << newb
@@ -183,14 +220,11 @@ class DynamicProperty {
       propertyValueString = stringify(value)
     }
     propertyClassValue = value.getClass().name
-
     children.removeAll(toPersist)
     children.each {
-      log.debug("Deleting child $it: ${it.properties}")
       it.delete(flush:true)
     }
     toPersist.each {
-      log.debug("Persisting child $it: ${it.properties}")
       it.save(failOnError:true)
     }
    }

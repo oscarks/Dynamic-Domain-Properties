@@ -12,7 +12,7 @@ grails.project.dependency.resolution = {
     repositories {        
         grailsPlugins()
         grailsHome()
-
+	grailsCentral()
         // uncomment the below to enable remote dependency resolution
         // from public Maven repositories
         mavenLocal()
@@ -28,6 +28,7 @@ grails.project.dependency.resolution = {
 
         // runtime 'mysql:mysql-connector-java:5.1.5'
         compile "com.google.code:jconch:1.3"
+        compile "com.google.guava:guava:r07"
     }
 
 }
